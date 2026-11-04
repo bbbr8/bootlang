@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "entry_points": [
+    "bootlang.py"
+  ],
+  "tests": [
+    "test_bootlang.py"
+  ],
+  "documentation": [
+    "README.md"
+  ]
+}
