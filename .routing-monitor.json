@@ -6,9 +6,15 @@
   "tests": [
     "test_bootlang.py",
     "test_blocks.py",
-    "test_hardening.py"
+    "test_hardening.py",
+    "test_public_distribution.py",
+    "test_public_distribution.py"
   ],
   "documentation": [
     "README.md"
+  ],
+  "docs": [
+    "PUBLIC_DISTRIBUTION.md",
+    "PUBLIC_DISTRIBUTION.md"
   ]
 }

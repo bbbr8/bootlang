@@ -23,3 +23,8 @@ This compares the observed divergence with whole-utterance reassignments under e
 ## Evaluation hardening
 
 Permutation checks tokenize each selected utterance once using the same Unicode casefold rule as `terms`. `design` reports movable/fixed utterances and whether any label reassignment is possible. A fixed-block p=1 describes the supplied design; it offers no power to distinguish periods.
+
+## Local-only distribution
+
+Run the CLI or Python modules locally. No HTTP endpoint, hosting setup or provider
+account is required. [Public distribution policy](PUBLIC_DISTRIBUTION.md).
