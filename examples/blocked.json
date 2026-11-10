@@ -1,0 +1,26 @@
+[
+  {
+    "speaker": "s",
+    "period": "a",
+    "session": "x",
+    "text": "red"
+  },
+  {
+    "speaker": "s",
+    "period": "a",
+    "session": "x",
+    "text": "red"
+  },
+  {
+    "speaker": "s",
+    "period": "b",
+    "session": "y",
+    "text": "blue"
+  },
+  {
+    "speaker": "s",
+    "period": "b",
+    "session": "y",
+    "text": "blue"
+  }
+]

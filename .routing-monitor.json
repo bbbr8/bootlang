@@ -4,7 +4,9 @@
     "bootlang.py"
   ],
   "tests": [
-    "test_bootlang.py"
+    "test_bootlang.py",
+    "test_blocks.py",
+    "test_hardening.py"
   ],
   "documentation": [
     "README.md"

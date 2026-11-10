@@ -3,6 +3,12 @@ from bootlang import permutation_test
 
 
 class PermutationTests(unittest.TestCase):
+    def test_budget_contract(self):
+        rows = [dict(period=p, speaker='a', text=p) for p in ['red','blue']]
+        for budget in (True, False, 0, -1, 1.5, '10', None):
+            with self.subTest(budget=budget), self.assertRaises(ValueError):
+                permutation_test(rows, 'a', 'red', 'blue', budget=budget)
+
     def test_exact_and_seeded(self):
         rows = [dict(period=p, speaker="a", text=p) for p in ["red","red","blue","blue"]]
         args = rows, "a", "red", "blue"
