@@ -2,7 +2,6 @@
 import argparse
 import json
 import math
-import re
 from collections import Counter
 from pathlib import Path
 
@@ -17,7 +16,8 @@ def _selected(rows,speaker,a,b):
         if not isinstance(row,dict) or any(not isinstance(row.get(k),str) for k in ('speaker','period','text')):
             raise ValueError('Rows need speaker, period and text strings')
         if row['speaker']==speaker and row['period'] in (a,b):
-            words=Counter(re.findall(r"[^\W\d_]+",row['text'].casefold()))
+            folded = row['text'].casefold()
+            words = Counter(''.join(ch if ch.isalpha() else ' ' for ch in folded).split())
             if words:selected.append((row,words))
     return selected
 
