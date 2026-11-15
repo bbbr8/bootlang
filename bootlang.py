@@ -45,7 +45,7 @@ def terms(rows,speaker,a,b):
     return _summary(counts,a,b)
 
 
-def permutation_test(rows, speaker, a, b, budget=1000, seed=0, block=None):
+def permutation_test(rows, speaker, a, b, budget=1000, seed=0, block=None, *, word_tests=False):
     """Shuffle utterances globally or within explicitly supplied exchangeability blocks.
 
     Block membership is supplied by the caller, never inferred. Each block keeps
@@ -63,9 +63,18 @@ def permutation_test(rows, speaker, a, b, budget=1000, seed=0, block=None):
     selected=[row for row,words in tokenized]
     counts={a:Counter(),b:Counter()}
     for row,words in tokenized:counts[row['period']].update(words)
-    observed = _summary(counts,a,b)["js_divergence_bits"]
+    summary = _summary(counts, a, b)
+    observed = summary["js_divergence_bits"]
     n = len(selected)
-    k = sum(r["period"] == a for r in selected)
+    if type(word_tests) is not bool:
+        raise ValueError('word_tests must be boolean')
+    pooled = counts[a] + counts[b]
+    words = sorted(pooled)
+    total = sum(pooled.values())
+    observed_shifts = summary['shifts'] if word_tests else []
+    thresholds = {row['word']: abs(row['share_change']) - 1e-12 for row in observed_shifts}
+    raw_extremes = Counter()
+    maxima = []
     groups = {}
     for i, row in enumerate(selected):
         key = row.get(block) if block is not None else 'all'
@@ -85,16 +94,41 @@ def permutation_test(rows, speaker, a, b, budget=1000, seed=0, block=None):
                       for _ in range(budget))
     exceed = draws = 0
     for partition in partitions:
-        first = set(partition)
-        trial={a:Counter(),b:Counter()}
-        for i,(_,words) in enumerate(tokenized):trial[a if i in first else b].update(words)
-        score = _summary(trial,a,b)["js_divergence_bits"]
+        first = Counter()
+        for i in partition:
+            first.update(tokenized[i][1])
+        first_total = sum(first.values())
+        other_total = total - first_total
+        score = maximum = 0.0
+        for word in words:
+            x = first[word] / first_total
+            y = (pooled[word] - first[word]) / other_total
+            mean = (x + y) / 2
+            score += sum(v * math.log2(v / mean) / 2 for v in (x, y) if v)
+            if word_tests:
+                change = abs(y - x)
+                raw_extremes[word] += change >= thresholds[word]
+                maximum = max(maximum, change)
+        if word_tests:
+            maxima.append(maximum)
         exceed += score >= observed - 1e-12
         draws += 1
     result = dict(observed_bits=observed, utterances=n, partitions=population,
                 evaluated=draws, method="exact" if exact else "monte_carlo",
                 seed=None if exact else seed, extreme=exceed,
                 p_value=exceed/draws if exact else (exceed+1)/(draws+1))
+    if word_tests:
+        from bisect import bisect_left
+        maxima.sort()
+        correction = int(not exact)
+        result['word_tests'] = []
+        for row in observed_shifts:
+            word = row['word']
+            adjusted = draws - bisect_left(maxima, thresholds[word])
+            result['word_tests'].append({
+                **row, 'extreme': raw_extremes[word], 'max_extreme': adjusted,
+                'p_value': (raw_extremes[word] + correction) / (draws + correction),
+                'max_adjusted_p_value': (adjusted + correction) / (draws + correction)})
     movable=[indices for indices,count in strata if 0<count<len(indices)]
     result['design']={'informative':population>1,'movable_blocks':len(movable),
                       'movable_utterances':sum(map(len,movable)),
@@ -116,12 +150,16 @@ if __name__ == "__main__":
     parser.add_argument("--budget", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument('--block', help='Preserve period counts inside this explicitly supplied row field')
+    parser.add_argument('--word-tests', action='store_true',
+                        help='Compare each word shift to the permuted vocabulary maximum')
     args = parser.parse_args()
+    if args.word_tests and args.command != 'permutation':
+        parser.error('--word-tests requires permutation')
     try:
         rows = json.loads(args.input.read_text(encoding="utf8"))
         params = (rows, args.speaker, args.a, args.b)
         result = (terms(*params) if args.command == "terms" else
-                  permutation_test(*params, args.budget, args.seed, args.block))
+                  permutation_test(*params, args.budget, args.seed, args.block, word_tests=args.word_tests))
         print(json.dumps(result, indent=2))
     except (ValueError, OSError, KeyError, TypeError) as error:
         parser.exit(2, f"Input error: {error}\n")
