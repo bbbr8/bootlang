@@ -29,14 +29,30 @@ def _summary(counts,a,b):
         raise ValueError("Both periods need words from the selected speaker")
     shifts = []
     divergence = 0.0
+    denominator = totals[a] * totals[b]
+    absolute_gap = 0
+    cross_matches = 0
+    within_matches = {a: 0, b: 0}
     for word in sorted(counts[a].keys() | counts[b].keys()):
         before, after = counts[a][word], counts[b][word]
         x, y = before / totals[a], after / totals[b]
         mean = (x + y) / 2
         divergence += sum(v * math.log2(v / mean) / 2 for v in (x, y) if v)
-        shifts.append(dict(word=word, before=before, after=after, share_change=y-x))
+        gap = after * totals[a] - before * totals[b]
+        absolute_gap += abs(gap)
+        cross_matches += before * after
+        within_matches[a] += before * (before - 1)
+        within_matches[b] += after * (after - 1)
+        shifts.append(dict(word=word, before=before, after=after,
+                           share_change=gap / denominator,
+                           share_change_fraction=str(Fraction(gap, denominator))))
     return dict(tokens=totals, js_divergence_bits=divergence,
-                shifts=sorted(shifts, key=lambda r: -abs(r["share_change"])))
+                total_variation_fraction=str(Fraction(absolute_gap, 2 * denominator)),
+                cross_period_match_fraction=str(Fraction(cross_matches, denominator)),
+                within_period_match_fraction={
+                    period: str(Fraction(within_matches[period], n * (n - 1))) if n >= 2 else None
+                    for period, n in totals.items()},
+                shifts=sorted(shifts, key=lambda r: -abs(r["after"] * totals[a] - r["before"] * totals[b])))
 
 
 def terms(rows,speaker,a,b):

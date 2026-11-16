@@ -40,3 +40,9 @@ With `permutation --word-tests`, word-level tail counts compare token-share
 differences by integer cross multiplication. Each word includes its signed
 `share_change_fraction` (after minus before). The overall Jensen–Shannon
 score still uses floating-point logarithms.
+
+`terms` gives the exact total variation distance between the two token
+distributions. Zero means identical proportions and one means disjoint
+vocabularies. It also reports the chance that two uniformly sampled tokens
+have the same spelling, both across periods and within each period. The
+within-period draw uses different token positions and requires two tokens.
