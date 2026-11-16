@@ -2,7 +2,7 @@
 import argparse
 import json
 import math
-import re
+from fractions import Fraction
 from collections import Counter
 from pathlib import Path
 
@@ -17,7 +17,8 @@ def _selected(rows,speaker,a,b):
         if not isinstance(row,dict) or any(not isinstance(row.get(k),str) for k in ('speaker','period','text')):
             raise ValueError('Rows need speaker, period and text strings')
         if row['speaker']==speaker and row['period'] in (a,b):
-            words=Counter(re.findall(r"[^\W\d_]+",row['text'].casefold()))
+            folded = row['text'].casefold()
+            words = Counter(''.join(ch if ch.isalpha() else ' ' for ch in folded).split())
             if words:selected.append((row,words))
     return selected
 
@@ -28,14 +29,30 @@ def _summary(counts,a,b):
         raise ValueError("Both periods need words from the selected speaker")
     shifts = []
     divergence = 0.0
+    denominator = totals[a] * totals[b]
+    absolute_gap = 0
+    cross_matches = 0
+    within_matches = {a: 0, b: 0}
     for word in sorted(counts[a].keys() | counts[b].keys()):
         before, after = counts[a][word], counts[b][word]
         x, y = before / totals[a], after / totals[b]
         mean = (x + y) / 2
         divergence += sum(v * math.log2(v / mean) / 2 for v in (x, y) if v)
-        shifts.append(dict(word=word, before=before, after=after, share_change=y-x))
+        gap = after * totals[a] - before * totals[b]
+        absolute_gap += abs(gap)
+        cross_matches += before * after
+        within_matches[a] += before * (before - 1)
+        within_matches[b] += after * (after - 1)
+        shifts.append(dict(word=word, before=before, after=after,
+                           share_change=gap / denominator,
+                           share_change_fraction=str(Fraction(gap, denominator))))
     return dict(tokens=totals, js_divergence_bits=divergence,
-                shifts=sorted(shifts, key=lambda r: -abs(r["share_change"])))
+                total_variation_fraction=str(Fraction(absolute_gap, 2 * denominator)),
+                cross_period_match_fraction=str(Fraction(cross_matches, denominator)),
+                within_period_match_fraction={
+                    period: str(Fraction(within_matches[period], n * (n - 1))) if n >= 2 else None
+                    for period, n in totals.items()},
+                shifts=sorted(shifts, key=lambda r: -abs(r["after"] * totals[a] - r["before"] * totals[b])))
 
 
 def terms(rows,speaker,a,b):
@@ -45,7 +62,7 @@ def terms(rows,speaker,a,b):
     return _summary(counts,a,b)
 
 
-def permutation_test(rows, speaker, a, b, budget=1000, seed=0, block=None):
+def permutation_test(rows, speaker, a, b, budget=1000, seed=0, block=None, *, word_tests=False):
     """Shuffle utterances globally or within explicitly supplied exchangeability blocks.
 
     Block membership is supplied by the caller, never inferred. Each block keeps
@@ -63,9 +80,25 @@ def permutation_test(rows, speaker, a, b, budget=1000, seed=0, block=None):
     selected=[row for row,words in tokenized]
     counts={a:Counter(),b:Counter()}
     for row,words in tokenized:counts[row['period']].update(words)
-    observed = _summary(counts,a,b)["js_divergence_bits"]
+    summary = _summary(counts, a, b)
+    observed = summary["js_divergence_bits"]
     n = len(selected)
-    k = sum(r["period"] == a for r in selected)
+    if type(word_tests) is not bool:
+        raise ValueError('word_tests must be boolean')
+    pooled = counts[a] + counts[b]
+    words = sorted(pooled)
+    total = sum(pooled.values())
+    observed_shifts = summary['shifts'] if word_tests else []
+    before_total = summary["tokens"][a]
+    after_total = summary["tokens"][b]
+    observed_denominator = before_total * after_total
+    # All words share a denominator within one assignment of utterances.
+    observed_gaps = {
+        row["word"]: abs(row["after"] * before_total - row["before"] * after_total)
+        for row in observed_shifts
+    }
+    raw_extremes = Counter()
+    maxima = []
     groups = {}
     for i, row in enumerate(selected):
         key = row.get(block) if block is not None else 'all'
@@ -85,16 +118,45 @@ def permutation_test(rows, speaker, a, b, budget=1000, seed=0, block=None):
                       for _ in range(budget))
     exceed = draws = 0
     for partition in partitions:
-        first = set(partition)
-        trial={a:Counter(),b:Counter()}
-        for i,(_,words) in enumerate(tokenized):trial[a if i in first else b].update(words)
-        score = _summary(trial,a,b)["js_divergence_bits"]
+        first = Counter()
+        for i in partition:
+            first.update(tokenized[i][1])
+        first_total = sum(first.values())
+        other_total = total - first_total
+        score = 0.0
+        maximum_gap = 0
+        denominator = first_total * other_total
+        for word in words:
+            x = first[word] / first_total
+            y = (pooled[word] - first[word]) / other_total
+            mean = (x + y) / 2
+            score += sum(v * math.log2(v / mean) / 2 for v in (x, y) if v)
+            if word_tests:
+                gap = abs(pooled[word] * first_total - first[word] * total)
+                raw_extremes[word] += gap * observed_denominator >= observed_gaps[word] * denominator
+                maximum_gap = max(maximum_gap, gap)
+        if word_tests:
+            maxima.append(Fraction(maximum_gap, denominator))
         exceed += score >= observed - 1e-12
         draws += 1
     result = dict(observed_bits=observed, utterances=n, partitions=population,
                 evaluated=draws, method="exact" if exact else "monte_carlo",
                 seed=None if exact else seed, extreme=exceed,
                 p_value=exceed/draws if exact else (exceed+1)/(draws+1))
+    if word_tests:
+        from bisect import bisect_left
+        maxima.sort()
+        correction = int(not exact)
+        result['word_tests'] = []
+        for row in observed_shifts:
+            word = row['word']
+            shift = Fraction(row["after"] * before_total - row["before"] * after_total,
+                             observed_denominator)
+            adjusted = draws - bisect_left(maxima, abs(shift))
+            result['word_tests'].append({
+                **row, 'share_change_fraction': str(shift), 'extreme': raw_extremes[word], 'max_extreme': adjusted,
+                'p_value': (raw_extremes[word] + correction) / (draws + correction),
+                'max_adjusted_p_value': (adjusted + correction) / (draws + correction)})
     movable=[indices for indices,count in strata if 0<count<len(indices)]
     result['design']={'informative':population>1,'movable_blocks':len(movable),
                       'movable_utterances':sum(map(len,movable)),
@@ -116,12 +178,16 @@ if __name__ == "__main__":
     parser.add_argument("--budget", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument('--block', help='Preserve period counts inside this explicitly supplied row field')
+    parser.add_argument('--word-tests', action='store_true',
+                        help='Compare each word shift to the permuted vocabulary maximum')
     args = parser.parse_args()
+    if args.word_tests and args.command != 'permutation':
+        parser.error('--word-tests requires permutation')
     try:
         rows = json.loads(args.input.read_text(encoding="utf8"))
         params = (rows, args.speaker, args.a, args.b)
         result = (terms(*params) if args.command == "terms" else
-                  permutation_test(*params, args.budget, args.seed, args.block))
+                  permutation_test(*params, args.budget, args.seed, args.block, word_tests=args.word_tests))
         print(json.dumps(result, indent=2))
     except (ValueError, OSError, KeyError, TypeError) as error:
         parser.exit(2, f"Input error: {error}\n")
