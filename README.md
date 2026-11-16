@@ -35,3 +35,8 @@ permutation p-value, and a single-step adjusted p-value based on the largest
 absolute share change across the whole vocabulary on each draw. These tests use
 the same utterance partitions, blocks, and sampling correction as the global
 test. Interpretation depends on exchangeability under the joint null.
+
+With `permutation --word-tests`, word-level tail counts compare token-share
+differences by integer cross multiplication. Each word includes its signed
+`share_change_fraction` (after minus before). The overall Jensen–Shannon
+score still uses floating-point logarithms.

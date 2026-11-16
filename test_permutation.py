@@ -48,3 +48,17 @@ class PermutationTests(unittest.TestCase):
         for item in report['word_tests']:
             self.assertEqual(item['p_value'], (item['extreme'] + 1) / 8)
             self.assertGreaterEqual(item['max_adjusted_p_value'], item['p_value'])
+
+    def test_distinguishes_sub_tolerance_shifts(self):
+        from collections import Counter
+        from fractions import Fraction
+        from unittest.mock import patch
+        n = 10**13
+        # Pre-tokenized counts avoid constructing terabytes of synthetic text.
+        tokenized = [(dict(period=p), Counter(red=n+d, blue=n-d))
+                     for p, d in [('a', 0), ('a', 0), ('b', 1), ('b', 1)]]
+        with patch('bootlang._selected', return_value=tokenized):
+            result = permutation_test([], 's', 'a', 'b', word_tests=True)
+        for word in result['word_tests']:
+            self.assertEqual((word['extreme'], word['max_extreme']), (2, 2))
+            self.assertEqual(abs(Fraction(word['share_change_fraction'])), Fraction(1, 2*n))

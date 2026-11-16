@@ -2,6 +2,7 @@
 import argparse
 import json
 import math
+from fractions import Fraction
 from collections import Counter
 from pathlib import Path
 
@@ -72,7 +73,14 @@ def permutation_test(rows, speaker, a, b, budget=1000, seed=0, block=None, *, wo
     words = sorted(pooled)
     total = sum(pooled.values())
     observed_shifts = summary['shifts'] if word_tests else []
-    thresholds = {row['word']: abs(row['share_change']) - 1e-12 for row in observed_shifts}
+    before_total = summary["tokens"][a]
+    after_total = summary["tokens"][b]
+    observed_denominator = before_total * after_total
+    # All words share a denominator within one assignment of utterances.
+    observed_gaps = {
+        row["word"]: abs(row["after"] * before_total - row["before"] * after_total)
+        for row in observed_shifts
+    }
     raw_extremes = Counter()
     maxima = []
     groups = {}
@@ -99,18 +107,20 @@ def permutation_test(rows, speaker, a, b, budget=1000, seed=0, block=None, *, wo
             first.update(tokenized[i][1])
         first_total = sum(first.values())
         other_total = total - first_total
-        score = maximum = 0.0
+        score = 0.0
+        maximum_gap = 0
+        denominator = first_total * other_total
         for word in words:
             x = first[word] / first_total
             y = (pooled[word] - first[word]) / other_total
             mean = (x + y) / 2
             score += sum(v * math.log2(v / mean) / 2 for v in (x, y) if v)
             if word_tests:
-                change = abs(y - x)
-                raw_extremes[word] += change >= thresholds[word]
-                maximum = max(maximum, change)
+                gap = abs(pooled[word] * first_total - first[word] * total)
+                raw_extremes[word] += gap * observed_denominator >= observed_gaps[word] * denominator
+                maximum_gap = max(maximum_gap, gap)
         if word_tests:
-            maxima.append(maximum)
+            maxima.append(Fraction(maximum_gap, denominator))
         exceed += score >= observed - 1e-12
         draws += 1
     result = dict(observed_bits=observed, utterances=n, partitions=population,
@@ -124,9 +134,11 @@ def permutation_test(rows, speaker, a, b, budget=1000, seed=0, block=None, *, wo
         result['word_tests'] = []
         for row in observed_shifts:
             word = row['word']
-            adjusted = draws - bisect_left(maxima, thresholds[word])
+            shift = Fraction(row["after"] * before_total - row["before"] * after_total,
+                             observed_denominator)
+            adjusted = draws - bisect_left(maxima, abs(shift))
             result['word_tests'].append({
-                **row, 'extreme': raw_extremes[word], 'max_extreme': adjusted,
+                **row, 'share_change_fraction': str(shift), 'extreme': raw_extremes[word], 'max_extreme': adjusted,
                 'p_value': (raw_extremes[word] + correction) / (draws + correction),
                 'max_adjusted_p_value': (adjusted + correction) / (draws + correction)})
     movable=[indices for indices,count in strata if 0<count<len(indices)]
