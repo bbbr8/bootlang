@@ -118,7 +118,7 @@ if __name__ == "__main__":
     parser.add_argument('--block', help='Preserve period counts inside this explicitly supplied row field')
     args = parser.parse_args()
     try:
-        rows = json.loads(args.input.read_text(encoding="utf8"))
+        rows = json.loads(args.input.read_text(encoding="utf-8-sig"))
         params = (rows, args.speaker, args.a, args.b)
         result = (terms(*params) if args.command == "terms" else
                   permutation_test(*params, args.budget, args.seed, args.block))
