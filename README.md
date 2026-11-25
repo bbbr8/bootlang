@@ -28,3 +28,13 @@ Permutation checks tokenize each selected utterance once using the same Unicode 
 
 Run the CLI or Python modules locally. No HTTP endpoint, hosting setup or provider
 account is required. [Public distribution policy](PUBLIC_DISTRIBUTION.md).
+
+## Matrix multiplication
+
+Run `python bootlang.py matmul -` and supply a JSON object on standard input, or
+replace `-` with a JSON filename. For example,
+`{"left":[[1,2],[3,4]],"right":[[5],[6]]}` returns
+`{"ok":true,"product":[[17],[39]]}`. Rows must be rectangular and the inner
+dimensions must match. Integers, finite decimals and quoted fractions are exact.
+Use an object with `real` and `imag` fields for a complex entry. A complex input
+produces complex output throughout. An empty outer list represents a 0-by-0 matrix.

@@ -1,8 +1,10 @@
+# Private - personal, financial, and mental-health data
 """Compare one speaker's vocabulary across two explicitly selected periods."""
 import argparse
 import json
 import math
 import re
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -108,7 +110,12 @@ def permutation_test(rows, speaker, a, b, budget=1000, seed=0, block=None):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
+    if sys.argv[1:2] == ["matmul"]:
+        from matrix_math import run_packet
+        matrix = argparse.ArgumentParser(prog="bootlang matmul", description="Multiply exact JSON matrices")
+        matrix.add_argument("packet", help="JSON file or - for stdin")
+        sys.exit(run_packet(matrix.parse_args(sys.argv[2:]).packet))
+    parser = argparse.ArgumentParser(description=__doc__, epilog="Use matmul PACKET for exact matrix multiplication.")
     parser.add_argument("command", choices=["terms", "permutation"])
     parser.add_argument("input", type=Path)
     for flag in ("speaker", "a", "b"):
